@@ -1,7 +1,6 @@
 Custom Shopify Returns & Exchanges Portal
 This is a full-stack web application that creates a custom, multi-step returns and exchanges portal for a Shopify store, inspired by professional apps like Returns Prime. The project is built with a Node.js/Express backend, MongoDB database, and two separate Vue.js frontends for the customer portal and the admin dashboard.
 
-(You can add a screenshot of your finished app here later)
 
 Features
 Customer Portal (Frontend)
