@@ -2,9 +2,8 @@
 const shopifyService = require('../services/shopifyService');
 const ReturnRequest = require('../models/ReturnRequest');
 
-// ... (lookupOrder, createReturnRequest, getReturnRequests, approveReturnRequest functions remain the same) ...
-
 const lookupOrder = async (req, res) => {
+  // ... existing code ...
   try {
     const { orderNumber, email } = req.body;
     if (!orderNumber || !email) {
@@ -49,8 +48,8 @@ const lookupOrder = async (req, res) => {
     res.status(500).json({ success: false, error: 'Server error while looking up order.' });
   }
 };
-
 const createReturnRequest = async (req, res) => {
+  // ... existing code ...
   try {
     const { orderId, orderNumber, email, items, requestType, exchangeForVariantId, refundMode } = req.body;
     const parsedItems = JSON.parse(items);
@@ -67,7 +66,7 @@ const createReturnRequest = async (req, res) => {
       request_type: requestType,
       exchange_for_variant_id: exchangeForVariantId,
       refund_mode: refundMode,
-      status: 'pending',
+      status: 'requested',
     });
 
     if (req.file) {
@@ -83,16 +82,31 @@ const createReturnRequest = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Gets all return/exchange requests, with optional status filtering
+ * @route   GET /api/returns/admin/requests
+ * @access  Private
+ */
 const getReturnRequests = async (req, res) => {
   try {
-    const requests = await ReturnRequest.find({ status: 'pending' }).sort({ createdAt: -1 });
+    const filter = {};
+    if (req.query.status && req.query.status !== 'all') {
+      filter.status = req.query.status;
+    }
+
+    // We will now fetch ALL requests and filter on the frontend for a better UX
+    // so we change the backend to always return everything.
+    const requests = await ReturnRequest.find({}).sort({ createdAt: -1 });
+    
     res.status(200).json({ success: true, data: requests });
   } catch (error) {
+    console.error('Error in getReturnRequests controller:', error.message);
     res.status(500).json({ success: false, error: 'Server error while fetching requests.' });
   }
 };
 
 const approveReturnRequest = async (req, res) => {
+  // ... existing code ...
   try {
     const requestId = req.params.id;
     const returnRequest = await ReturnRequest.findById(requestId);
@@ -101,7 +115,7 @@ const approveReturnRequest = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Return request not found.' });
     }
 
-    if (returnRequest.status !== 'pending') {
+    if (returnRequest.status !== 'requested') {
       return res.status(400).json({ success: false, error: 'This request has already been processed.' });
     }
 
@@ -124,8 +138,6 @@ const approveReturnRequest = async (req, res) => {
         shopifyOrder.currency
       );
       returnRequest.status = 'approved';
-      await returnRequest.save();
-      res.status(200).json({ success: true, message: 'Return approved and refund processed successfully.' });
     } else if (returnRequest.request_type === 'exchange') {
       if (!shopifyOrder.customer || !shopifyOrder.customer.id) {
           throw new Error('Customer information is missing from the original order.');
@@ -135,11 +147,14 @@ const approveReturnRequest = async (req, res) => {
         returnRequest.exchange_for_variant_id,
         returnRequest.shopify_order_number
       );
-      returnRequest.status = 'exchange_processed';
-      await returnRequest.save();
-      res.status(200).json({ success: true, message: 'Exchange approved and draft order created successfully.' });
+      returnRequest.status = 'approved';
     }
+    
+    await returnRequest.save();
+    res.status(200).json({ success: true, message: 'Request approved successfully.' });
+
   } catch (error) {
+    console.error('Error in approveReturnRequest controller:', error.message);
     const errorMessage = error.message?.toLowerCase();
     if (errorMessage && errorMessage.includes('cannot refund more items')) {
       return res.status(400).json({ success: false, error: 'This request has already been processed.' });
@@ -147,13 +162,8 @@ const approveReturnRequest = async (req, res) => {
     res.status(500).json({ success: false, error: 'Server error while approving request.' });
   }
 };
-
-/**
- * @desc    Rejects a return request and updates its status
- * @route   POST /api/returns/admin/requests/:id/reject
- * @access  Private
- */
 const rejectReturnRequest = async (req, res) => {
+  // ... existing code ...
   try {
     const returnRequest = await ReturnRequest.findById(req.params.id);
 
@@ -161,7 +171,7 @@ const rejectReturnRequest = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Return request not found.' });
     }
 
-    if (returnRequest.status !== 'pending') {
+    if (returnRequest.status !== 'requested') {
       return res.status(400).json({ success: false, error: 'This request has already been processed.' });
     }
 
@@ -175,10 +185,11 @@ const rejectReturnRequest = async (req, res) => {
   }
 };
 
+
 module.exports = {
   lookupOrder,
   createReturnRequest,
   getReturnRequests,
   approveReturnRequest,
-  rejectReturnRequest, // <-- EXPORT THE NEW FUNCTION
+  rejectReturnRequest,
 };
