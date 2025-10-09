@@ -1,170 +1,97 @@
 <script setup>
-import { ref } from 'vue';
-import axios from 'axios';
-
-// --- Components ---
-// We import all four of our step components.
-import Step1_OrderLookup from './components/Step1_OrderLookup.vue';
-import Step2_SelectItems from './components/Step2_SelectItems.vue';
-import Step3_ReturnDetails from './components/Step3_ReturnDetails.vue';
-import Step4_Confirm from './components/Step4_Confirm.vue';
-
-// --- State Management ---
-// This reactive variable controls which step the user is currently on.
-const currentStep = ref('lookup'); 
-// This will hold the order data after a successful lookup.
-const orderData = ref(null);
-// This object will store all the information for the return request as the user fills it out.
-const returnRequest = ref({
-  items: [],
-  requestType: '',
-  refundMode: '',
-  reason: '',
-  imageFile: null,
-  exchangeForVariantId: ''
-});
-const isLoading = ref(false);
-const errorMessage = ref('');
-
-
-// --- API Client ---
-const apiClient = axios.create({
-  baseURL: 'http://localhost:5002/api/returns',
-});
-
-// --- Step Navigation Functions ---
-// Called by Step 1 when an order is found.
-const handleOrderFound = (data) => {
-  orderData.value = data;
-  currentStep.value = 'select'; // Move to Step 2
-};
-
-// Called by Step 2 when an item and action are selected.
-const handleItemSelected = ({ item, action }) => {
-  returnRequest.value.items = [item];
-  returnRequest.value.requestType = action;
-  currentStep.value = 'details'; // Move to Step 3
-};
-
-// Called by Step 3 when the details are submitted.
-const handleDetailsSubmitted = ({ reason, refundMode, imageFile, exchangeForVariantId }) => {
-  returnRequest.value.reason = reason;
-  returnRequest.value.refundMode = refundMode;
-  returnRequest.value.imageFile = imageFile;
-  returnRequest.value.exchangeForVariantId = exchangeForVariantId;
-  currentStep.value = 'confirm'; // Move to Step 4
-};
-
-// This is the final function, called by Step 4 to submit the request to the backend.
-const handleSubmitRequest = async () => {
-  isLoading.value = true;
-  errorMessage.value = '';
-
-  // We must use FormData because we are sending a file (the image).
-  const formData = new FormData();
-  formData.append('orderId', orderData.value.orderId);
-  formData.append('orderNumber', orderData.value.orderNumber);
-  formData.append('email', orderData.value.email || '');
-  formData.append('requestType', returnRequest.value.requestType);
-  formData.append('refundMode', returnRequest.value.refundMode);
-
-  // We add the 'reason' to each item object before sending.
-  const itemsWithReason = returnRequest.value.items.map(item => ({
-    ...item,
-    reason: returnRequest.value.reason,
-  }));
-  // We stringify the items array to send it as a text field.
-  formData.append('items', JSON.stringify(itemsWithReason));
-  
-  if (returnRequest.value.requestType === 'exchange') {
-    formData.append('exchangeForVariantId', returnRequest.value.exchangeForVariantId);
-  }
-
-  if (returnRequest.value.imageFile) {
-    formData.append('image', returnRequest.value.imageFile);
-  }
-
-  try {
-    // Send the final data to the backend's '/create' endpoint.
-    await apiClient.post('/create', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    currentStep.value = 'success'; // Move to the final success screen
-  } catch (error) {
-    errorMessage.value = error.response?.data?.error || 'There was an error submitting your request. Please try again.';
-    currentStep.value = 'confirm'; // Stay on the confirm step to show the error
-  } finally {
-    isLoading.value = false;
-  }
-};
-
-// Resets the entire flow to the beginning.
-const resetFlow = () => {
-  currentStep.value = 'lookup';
-  orderData.value = null;
-  returnRequest.value = {
-    items: [], requestType: '', refundMode: '', reason: '', imageFile: null, exchangeForVariantId: ''
-  };
-};
-
+// This App.vue is now just a simple layout shell.
+// We only need to import the RouterView component from Vue Router.
+import { RouterView } from 'vue-router';
 </script>
 
 <template>
+  <!-- This is the main layout container that centers the content on the page -->
   <div class="min-h-screen font-sans flex items-center justify-center p-4">
     <div class="w-full max-w-4xl">
       <main>
-        <div v-if="isLoading" class="text-center p-8 bg-white rounded-lg shadow-md">
-            <p class="text-gray-600 animate-pulse">Submitting your request...</p>
-        </div>
-        <div v-else>
-          <!-- Conditionally render each step component based on the `currentStep` variable -->
-          <Step1_OrderLookup 
-            v-if="currentStep === 'lookup'" 
-            @order-found="handleOrderFound" 
-          />
-          <Step2_SelectItems
-            v-if="currentStep === 'select'"
-            :order="orderData"
-            @item-selected="handleItemSelected"
-            @go-back="resetFlow"
-          />
-          <Step3_ReturnDetails
-            v-if="currentStep === 'details'"
-            :request="returnRequest"
-            @details-submitted="handleDetailsSubmitted"
-            @go-back="currentStep = 'select'"
-          />
-          <Step4_Confirm
-            v-if="currentStep === 'confirm'"
-            :order="orderData"
-            :request="returnRequest"
-            @submit-request="handleSubmitRequest"
-            @go-back="currentStep = 'details'"
-          />
-          
-          <!-- The final success message screen -->
-          <div v-if="currentStep === 'success'" class="bg-white p-8 rounded-lg shadow-md w-full max-w-lg mx-auto text-center">
-              <svg class="w-16 h-16 mx-auto text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-              <h2 class="mt-4 text-2xl font-semibold text-green-600">Request Submitted Successfully!</h2>
-              <p class="text-gray-600 mt-2">You will receive a confirmation email with next steps shortly.</p>
-              <button @click="resetFlow" class="mt-8 px-6 py-2 text-sm font-medium text-white bg-cyan-500 rounded-md hover:bg-cyan-600">Start another return</button>
-          </div>
-
-          <!-- A global error message display -->
-          <div v-if="errorMessage" @click="errorMessage=''" class="cursor-pointer mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm text-center">
-            {{ errorMessage }}
-          </div>
-        </div>
+        <!-- RouterView is the magic component from Vue Router. -->
+        <!-- It acts as a placeholder that will be automatically filled with the -->
+        <!-- correct page (e.g., OrderLookup.vue, SelectItems.vue) based on -->
+        <!-- the current URL in the browser's address bar. -->
+        <RouterView />
       </main>
     </div>
   </div>
 </template>
 
 <style>
+/* Import a clean, modern font from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+/* These global styles will apply to all pages of your customer portal */
 body {
   margin: 0;
-  background-color: #f3f4f6; /* Tailwind's bg-gray-100 */
+  background-color: #eef2f3;
+  background-image: 
+    radial-gradient(circle at top left, rgba(14, 165, 233, 0.15), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.15), transparent 30%);
+  font-family: 'Inter', sans-serif;
+}
+
+/* --- THIS IS THE CORRECTED CSS --- */
+
+/* This global style targets the main titles (h2) with a more vibrant gradient */
+main h2 {
+  font-size: 1.875rem; /* 3xl */
+  font-weight: 800; /* extrabold */
+  color: transparent;
+  background-clip: text;
+  -webkit-background-clip: text;
+  background-image: linear-gradient(to right, #9333ea, #db2777, #ef4444);
+}
+
+/* We define some shared styles here to keep our view components clean */
+.input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  color: #111827;
+  transition: all 0.2s ease-in-out;
+}
+.input:focus {
+  outline: none;
+  --tw-ring-color: rgb(165 180 252 / 0.5);
+  box-shadow: 0 0 0 3px var(--tw-ring-color);
+  border-color: transparent;
+}
+
+.btn-primary {
+  width: 100%;
+  background-image: linear-gradient(to right, #a855f7, #ec4899, #ef4444);
+  color: white;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  transform: translateY(0);
+  transition: all 0.3s ease-in-out;
+}
+.btn-primary:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  transform: translateY(-3px);
+  filter: saturate(1.5);
+}
+.btn-primary:disabled {
+  background-image: linear-gradient(to right, #9ca3af, #6b7280);
+  cursor: not-allowed;
+  transform: translateY(0);
+}
+
+.error-box { 
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background-color: #fee2e2;
+  border: 1px solid #f87171;
+  color: #b91c1c;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
 }
 </style>
+

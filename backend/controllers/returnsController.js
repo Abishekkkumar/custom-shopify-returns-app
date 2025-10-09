@@ -2,8 +2,12 @@
 const shopifyService = require('../services/shopifyService');
 const ReturnRequest = require('../models/ReturnRequest');
 
+/**
+ * @desc    Finds a Shopify order and returns its details if found
+ * @route   POST /api/returns/lookup
+ * @access  Public
+ */
 const lookupOrder = async (req, res) => {
-  // ... existing code ...
   try {
     const { orderNumber, email } = req.body;
     if (!orderNumber || !email) {
@@ -48,8 +52,13 @@ const lookupOrder = async (req, res) => {
     res.status(500).json({ success: false, error: 'Server error while looking up order.' });
   }
 };
+
+/**
+ * @desc    Creates a new pending return or exchange request in our database
+ * @route   POST /api/returns/create
+ * @access  Public
+ */
 const createReturnRequest = async (req, res) => {
-  // ... existing code ...
   try {
     const { orderId, orderNumber, email, items, requestType, exchangeForVariantId, refundMode } = req.body;
     const parsedItems = JSON.parse(items);
@@ -83,21 +92,49 @@ const createReturnRequest = async (req, res) => {
 };
 
 /**
- * @desc    Gets all return/exchange requests, with optional status filtering
+ * @desc    Gets all return/exchange requests, with status and date filtering
  * @route   GET /api/returns/admin/requests
  * @access  Private
  */
 const getReturnRequests = async (req, res) => {
   try {
     const filter = {};
+
     if (req.query.status && req.query.status !== 'all') {
       filter.status = req.query.status;
     }
 
-    // We will now fetch ALL requests and filter on the frontend for a better UX
-    // so we change the backend to always return everything.
-    const requests = await ReturnRequest.find({}).sort({ createdAt: -1 });
+    if (req.query.dateRange) {
+      const now = new Date();
+      let startDate;
+      now.setHours(0,0,0,0); // Start of today
+
+      switch (req.query.dateRange) {
+        case 'today':
+          startDate = new Date(now);
+          break;
+        case 'yesterday':
+          const yesterday = new Date(now);
+          yesterday.setDate(now.getDate() - 1);
+          startDate = new Date(yesterday);
+          const endDate = new Date(yesterday);
+          endDate.setHours(23, 59, 59, 999);
+          filter.createdAt = { $gte: startDate, $lte: endDate };
+          break;
+        case 'last7days':
+          startDate = new Date(now.setDate(now.getDate() - 6)); // 6 days ago to include today
+          break;
+        case 'last30days':
+          startDate = new Date(now.setDate(now.getDate() - 29)); // 29 days ago to include today
+          break;
+      }
+
+      if (req.query.dateRange !== 'yesterday') {
+         filter.createdAt = { $gte: startDate };
+      }
+    }
     
+    const requests = await ReturnRequest.find(filter).sort({ createdAt: -1 });
     res.status(200).json({ success: true, data: requests });
   } catch (error) {
     console.error('Error in getReturnRequests controller:', error.message);
@@ -105,11 +142,14 @@ const getReturnRequests = async (req, res) => {
   }
 };
 
+/**
+ * @desc    Approves a return or exchange request
+ * @route   POST /api/returns/admin/requests/:id/approve
+ * @access  Private
+ */
 const approveReturnRequest = async (req, res) => {
-  // ... existing code ...
   try {
-    const requestId = req.params.id;
-    const returnRequest = await ReturnRequest.findById(requestId);
+    const returnRequest = await ReturnRequest.findById(req.params.id);
 
     if (!returnRequest) {
       return res.status(404).json({ success: false, error: 'Return request not found.' });
@@ -124,7 +164,7 @@ const approveReturnRequest = async (req, res) => {
       returnRequest.customer_email
     );
     if (!shopifyOrder) {
-      throw new Error('Original Shopify order could not be found to process request.');
+      throw new Error('Original Shopify order could not be found.');
     }
 
     if (returnRequest.request_type === 'return') {
@@ -139,7 +179,7 @@ const approveReturnRequest = async (req, res) => {
       );
       returnRequest.status = 'approved';
     } else if (returnRequest.request_type === 'exchange') {
-      if (!shopifyOrder.customer || !shopifyOrder.customer.id) {
+      if (!shopifyOrder.customer?.id) {
           throw new Error('Customer information is missing from the original order.');
       }
       await shopifyService.createDraftOrderForExchange(
@@ -154,7 +194,6 @@ const approveReturnRequest = async (req, res) => {
     res.status(200).json({ success: true, message: 'Request approved successfully.' });
 
   } catch (error) {
-    console.error('Error in approveReturnRequest controller:', error.message);
     const errorMessage = error.message?.toLowerCase();
     if (errorMessage && errorMessage.includes('cannot refund more items')) {
       return res.status(400).json({ success: false, error: 'This request has already been processed.' });
@@ -162,29 +201,46 @@ const approveReturnRequest = async (req, res) => {
     res.status(500).json({ success: false, error: 'Server error while approving request.' });
   }
 };
+
+/**
+ * @desc    Rejects a return request
+ * @route   POST /api/returns/admin/requests/:id/reject
+ * @access  Private
+ */
 const rejectReturnRequest = async (req, res) => {
-  // ... existing code ...
   try {
     const returnRequest = await ReturnRequest.findById(req.params.id);
-
     if (!returnRequest) {
       return res.status(404).json({ success: false, error: 'Return request not found.' });
     }
-
     if (returnRequest.status !== 'requested') {
       return res.status(400).json({ success: false, error: 'This request has already been processed.' });
     }
-
     returnRequest.status = 'rejected';
     await returnRequest.save();
-
     res.status(200).json({ success: true, message: 'Request has been rejected.' });
   } catch (error) {
-    console.error('Error in rejectReturnRequest controller:', error);
     res.status(500).json({ success: false, error: 'Server error while rejecting request.' });
   }
 };
 
+/**
+ * @desc    Gets a single return request by its ID
+ * @route   GET /api/returns/admin/requests/:id
+ * @access  Private
+ */
+const getRequestById = async (req, res) => {
+  try {
+    const request = await ReturnRequest.findById(req.params.id);
+    if (!request) {
+      return res.status(404).json({ success: false, error: 'Request not found' });
+    }
+    res.status(200).json({ success: true, data: request });
+  } catch (error) {
+    console.error('Error in getRequestById controller:', error);
+    res.status(500).json({ success: false, error: 'Server Error' });
+  }
+};
 
 module.exports = {
   lookupOrder,
@@ -192,4 +248,6 @@ module.exports = {
   getReturnRequests,
   approveReturnRequest,
   rejectReturnRequest,
+  getRequestById,
 };
+

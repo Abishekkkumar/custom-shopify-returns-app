@@ -28,7 +28,8 @@ const {
   createReturnRequest,
   getReturnRequests,
   approveReturnRequest,
-  rejectReturnRequest, // <-- IMPORT THE NEW FUNCTION
+  rejectReturnRequest,
+  getRequestById, // <-- IMPORT THE NEW FUNCTION
 } = require('../controllers/returnsController');
 
 // --- Public Customer Routes ---
@@ -38,6 +39,7 @@ router.post('/create', upload.single('image'), createReturnRequest);
 // --- Admin Dashboard Routes ---
 router.get('/admin/requests', getReturnRequests);
 router.post('/admin/requests/:id/approve', approveReturnRequest);
-router.post('/admin/requests/:id/reject', rejectReturnRequest); // <-- ADD THIS NEW ROUTE
+router.post('/admin/requests/:id/reject', rejectReturnRequest);
+router.get('/admin/requests/:id', getRequestById); // <-- ADD THIS NEW ROUTE
 
 module.exports = router;
